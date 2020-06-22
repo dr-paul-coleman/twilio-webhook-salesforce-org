@@ -1,0 +1,8 @@
+{
+  "name": "twilio-webhook-salesforce-org",
+  "description": "A simple example of SMS integration option for Salesforce Employee and Contacts",
+  "success_url": "/",
+  "scripts": {
+    "postdeploy": "echo 'restarting'"
+  }
+}
