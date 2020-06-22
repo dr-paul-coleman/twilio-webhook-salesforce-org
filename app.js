@@ -2,6 +2,13 @@ const restify = require('restify');
 const bunyan = require('bunyan');
 const jsforce = require("jsforce");
 
+const username = process.env.ORG_USER;
+const password = process.env.ORG_PASSWORD_TOKEN;
+const org = new jsforce.Connection({
+    loginUrl : process.env.ORG_URL
+});
+
+
 const server = restify.createServer({name: 'Salesforce.org SMS Gateway', version: '1.0.0', "ignoreTrailingSlash": true});
 server.use(restify.plugins.dateParser());
 server.use(restify.plugins.acceptParser(server.acceptable));
@@ -32,19 +39,11 @@ server.on('after', restify.plugins.auditLogger({
     printLog : true
 }));
 
-
-function cliAddress(req) {
-    return req.connection.remoteAddress || req.socket.remoteAddress || req.headers['x-forwarded-for'];
-}
-
-server.isLocal = function(req) {
-    return server.address() === "::" || cliAddress(req);
-}
-
 function validateRequest(req, resp, next) {
 
     //require https when running in heroku host, otherwise allow localhost access only
-    if( req.headers["x-forwarded-proto"] === "https" || server.isLocal(req) ) {
+    const isHeroku = req.headers["x-forwarded-proto"] === "https" && process.env.DYNO;
+    if( isHeroku || !process.env.DYNO ) { // force https on remote heroku dynos
             var origin = req.header("Origin");
             resp.header("Access-Control-Allow-Origin", origin);
             resp.header("Access-Control-Allow-Methods", "POST");
@@ -56,15 +55,7 @@ function validateRequest(req, resp, next) {
     }
 }
 
-function doSalesforceIO(req, resp, next) {
-
-    const username = process.env.ORG_USER;
-    const password = process.env.ORG_PASSWORD_TOKEN;
-    const urlenv = process.env.ORG_URL;
-
-    const org = new jsforce.Connection({
-        loginUrl : urlenv
-    });
+function routeToSalesforce(req, resp, next) {
 
     org.login(username, password, function (err, userInfo) {
         return err ? console.error(err) : console.log(userInfo);
@@ -76,21 +67,67 @@ function doSalesforceIO(req, resp, next) {
         const headers = {Authorization: `Bearer ${org.accessToken}`, Accept:'*'};
 
         console.log( 'Sending Request to Salesforce: ' + salesforceUrl);
-        org.requestGet(salesforceUrl, {headers: headers}).then(response => {
-            console.log('Salesforce response: ' + response);
-            resp.header('Content-Type', 'application/xml');
-            resp.send(200, response);
+        org.requestGet(salesforceUrl, {headers: headers}).then(sf_response => {
+            console.log('Salesforce response: ' + sf_response);
+            resp.header('Content-Type', 'text/plain; charset=utf-8');
+            resp.send(200, sf_response);
             return next(false);
         }).catch(e => console.error(e) ) ;
     } );
 }
 
-server.get("/webhook", validateRequest, doSalesforceIO );
-server.post("/webhook", validateRequest, doSalesforceIO);
-server.get("*", function (req,res,next) {
-  return next(new Error("Invalid Request"));
-});
+server.get("/webhook", validateRequest, routeToSalesforce );
+server.post("/webhook", validateRequest, routeToSalesforce);
 
+server.get("/reset/:recid", validateRequest, function(req, resp, next){
+
+        org.login(username, password, function (err, userInfo) {
+            return err ? console.error(err) : console.log(userInfo);
+        }).then(r => {
+            if( !req.parms.recid ) {
+                resp.send(500, {"500":"Unsupported Reset Request"});
+                return next(false);
+            } else {
+                if ( org.userInfo.organizationId.startsWith(req.params.recid) ) {
+
+                    console.log('Resetting SMS org data...');
+                    org.sobject('wrk_SMSSurveyInvitation__c')
+                        .find({CreatedDate: jsforce.Date.TODAY})
+                        .destroy(function (err, invites) {
+                            if (err) {
+                                return console.error(err);
+                            }
+                            console.log(invites);
+                            org.sobject('wrk_SMSSurveyResponse__c')
+                                .find({CreatedDate: jsforce.Date.TODAY})
+                                .destroy(function (err, responses) {
+                                    if (err) {
+                                        return console.error(err);
+                                    }
+                                    console.log(responses);
+                                    org.sobject('Employee')
+                                        .find({LastModifiedDate: jsforce.Date.TODAY})
+                                        .update({CurrentWellnessStatus: 'Unknown'}, function (err, employees) {
+                                            if (err) {
+                                                return console.error(err);
+                                            }
+                                            console.log(employees);
+                                            resp.send(200, "Reset Success");
+                                            return next(false);
+                                        });
+                                });
+                        });
+                } else {
+                    resp.send(500, {"500":"Bad Reset Request"});
+                    return next(false);
+                }
+            }
+        });
+} );
+
+server.get("*", function (req,res,next) {
+    return next(new Error("Invalid Request"));
+});
 
 server.listen(process.env.PORT || 5000, function () {
   console.log('%s listening at %s', server.name, server.url);
