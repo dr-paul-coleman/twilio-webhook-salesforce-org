@@ -75,8 +75,9 @@ function doSalesforceIO(req, resp, next) {
         const salesforceUrl = `${org.instanceUrl}/services/apexrest/sms/v1?From=${fromPhone}&Body=${responseText}`;
         const headers = {Authorization: `Bearer ${org.accessToken}`, Accept:'*'};
 
+        console.log( 'Sending Request to Salesforce: ' + salesforceUrl);
         org.requestGet(salesforceUrl, {headers: headers}).then(response => {
-            console.log(response);
+            console.log('Salesforce response: ' + response);
             resp.header('Content-Type', 'application/xml');
             resp.send(200, response);
             return next(false);
