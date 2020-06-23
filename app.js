@@ -68,12 +68,12 @@ function routeToSalesforce(req, resp, next) {
         const responseText = req.params.Body || req.params.body;
 
         const salesforceUrl = `${org.instanceUrl}/services/apexrest/sms/v1?From=${fromPhone}&Body=${responseText}`;
-        const headers = {Authorization: `Bearer ${org.accessToken}`, Accept: '*/xml'};
+        const headers = {Authorization: `Bearer ${org.accessToken}`, Accept: '*/*'};
 
         console.log('Sending Request to Salesforce: ' + salesforceUrl);
         org.requestGet(salesforceUrl, {headers: headers}).then(sf_response => {
             console.log('Salesforce response: ' + sf_response);
-            resp.header('Content-Type', 'text/xml; charset=utf-8');
+            resp.header('Content-Type', 'text/html; charset=utf-8');
             resp.send(200, sf_response);
             return next(false);
         }).catch(e => {
