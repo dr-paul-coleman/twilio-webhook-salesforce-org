@@ -73,7 +73,7 @@ function routeToSalesforce(req, resp, next) {
         console.log('Sending Request to Salesforce: ' + salesforceUrl);
         org.requestGet(salesforceUrl, {headers: headers}).then(sf_response => {
             console.log('Salesforce response: ' + sf_response);
-            resp.header('Content-Type', 'text/plain; charset=utf-8');
+            resp.header('Content-Type', 'text/xml; charset=utf-8');
             resp.send(200, sf_response);
             return next(false);
         }).catch(e => {
